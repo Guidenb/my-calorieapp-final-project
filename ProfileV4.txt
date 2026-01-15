@@ -1,0 +1,242 @@
+import React, { useState, useEffect, useContext } from 'react'; // 🛑 เพิ่ม useContext
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useNavigation } from '@react-navigation/native'; 
+import { CalorieContext } from './CalorieContext'; 
+
+const API_KEY = "T45MQ8GXHh42i+FPahLw8w==5VfSJjzUozRvT9DW"; // 🔑 API Key
+
+const ProfileScreen = () => {
+  const navigation = useNavigation(); 
+  // 🛑 ใช้ Context เพื่อดึง setAuthToken
+  const { setAuthToken } = useContext(CalorieContext); 
+  
+  const [profile, setProfile] = useState({
+    weight: '',
+    height: '',
+    age: '',
+    gender: '',
+    bmr: 0,
+  });
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const loadProfile = async () => {
+    try {
+      const raw = await AsyncStorage.getItem('userData');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setProfile(parsed);
+      }
+    } catch (err) {
+      console.error('Load profile error:', err);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!profile.weight || !profile.height || !profile.age || !profile.gender) {
+      Alert.alert('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลให้ครบ');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const updated = { ...profile };
+      await fetchBMR(updated);
+      await AsyncStorage.setItem('userData', JSON.stringify(updated));
+      setProfile(updated);
+      Alert.alert('สำเร็จ', 'บันทึกโปรไฟล์เรียบร้อยแล้ว');
+    } catch (err) {
+      console.error('Save profile error:', err);
+      Alert.alert('ผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    Alert.alert(
+      "ออกจากระบบ",
+      "คุณแน่ใจหรือไม่ว่าต้องการออกจากระบบ?",
+      [
+        {
+          text: "ยกเลิก",
+          style: "cancel"
+        },
+        {
+          text: "ใช่, ออกจากระบบ",
+          onPress: async () => {
+            try {
+              // ลบ Token ออกจาก AsyncStorage
+              await AsyncStorage.removeItem('userToken');
+
+              // 🛑 ใช้ setAuthToken(null) เพื่ออัปเดต Context ทันที!
+              // App.js จะเห็น authToken เป็น null และเปลี่ยนไป Auth Stack เอง
+              setAuthToken(null); 
+              
+            } catch (e) {
+              console.error('Logout error:', e);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const fetchBMR = async (data) => {
+    const { weight, height, age, gender } = data;
+    try {
+      const url = `https://api.api-ninjas.com/v1/bmr?weight=${weight}&height=${height}&age=${age}&gender=${gender}`;
+      const res = await fetch(url, {
+        headers: { 'X-Api-Key': API_KEY },
+      });
+
+      if (!res.ok) throw new Error(`API ${res.status}`);
+      const json = await res.json();
+
+      if (json && json.bmr) {
+        data.bmr = Math.round(json.bmr);
+      } else {
+        throw new Error("No BMR in response");
+      }
+    } catch (err) {
+      console.warn("API fail, fallback manual:", err.message);
+      data.bmr = manualBMR(data);
+    }
+  };
+
+  const manualBMR = (data) => {
+    const w = parseFloat(data.weight);
+    const h = parseFloat(data.height);
+    const a = parseInt(data.age);
+    if (data.gender === 'male') {
+      return Math.round(10 * w + 6.25 * h - 5 * a + 5);
+    } else {
+      return Math.round(10 * w + 6.25 * h - 5 * a - 161);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      <Text style={styles.title}>โปรไฟล์</Text>
+      <View style={styles.form}>
+        <Text style={styles.label}>น้ำหนัก (kg)</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          value={profile.weight}
+          onChangeText={(t) => setProfile({ ...profile, weight: t })}
+        />
+        <Text style={styles.label}>ส่วนสูง (cm)</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          value={profile.height}
+          onChangeText={(t) => setProfile({ ...profile, height: t })}
+        />
+        <Text style={styles.label}>อายุ</Text>
+        <TextInput
+          style={styles.input}
+          keyboardType="numeric"
+          value={profile.age}
+          onChangeText={(t) => setProfile({ ...profile, age: t })}
+        />
+        <Text style={styles.label}>เพศ</Text>
+        <View style={styles.genderRow}>
+          <TouchableOpacity
+            style={[styles.genderButton, profile.gender === 'male' && styles.genderButtonActive]}
+            onPress={() => setProfile({ ...profile, gender: 'male' })}
+          >
+            <Text style={[styles.genderText, profile.gender === 'male' && styles.genderTextActive]}>
+              ชาย
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.genderButton, profile.gender === 'female' && styles.genderButtonActive]}
+            onPress={() => setProfile({ ...profile, gender: 'female' })}
+          >
+            <Text style={[styles.genderText, profile.gender === 'female' && styles.genderTextActive]}>
+              หญิง
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {profile.bmr > 0 && (
+          <Text style={styles.bmrText}>BMR: {profile.bmr} kcal</Text>
+        )}
+
+        <TouchableOpacity
+          style={[styles.bt, loading && { backgroundColor: '#666' }]}
+          onPress={saveProfile}
+          disabled={loading}
+        >
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btText}>บันทึก</Text>}
+        </TouchableOpacity>
+
+        {/* ปุ่มออกจากระบบ */}
+        <TouchableOpacity
+          style={[styles.logoutBt]}
+          onPress={handleLogout}
+        >
+          <Text style={styles.logoutBtText}>ออกจากระบบ</Text>
+        </TouchableOpacity>
+
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#2A2D47' },
+  title: { fontSize: 24, color: '#fff', margin: 20, fontWeight: 'bold' },
+  form: { backgroundColor: '#3A3D5C', margin: 15, padding: 20, borderRadius: 12 },
+  label: { color: '#8B8FA3', marginBottom: 6 },
+  input: {
+    backgroundColor: '#4A4D6C',
+    borderRadius: 10,
+    padding: 12,
+    color: '#fff',
+    marginBottom: 15,
+  },
+  genderRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  genderButton: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 10,
+    marginHorizontal: 5,
+    backgroundColor: '#4A4D6C',
+    alignItems: 'center',
+  },
+  genderButtonActive: { backgroundColor: '#00D4AA' },
+  genderText: { color: '#8B8FA3', fontSize: 16 },
+  genderTextActive: { color: '#fff', fontWeight: 'bold' },
+  bmrText: { color: '#00D4AA', fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
+  bt: { backgroundColor: '#00D4AA', padding: 15, borderRadius: 10, alignItems: 'center' },
+  btText: { color: '#fff', fontWeight: 'bold' },
+
+  logoutBt: {
+    backgroundColor: '#FF6B6B', // สีแดง
+    padding: 15,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 15, // เว้นจากปุ่มบันทึก
+  },
+  logoutBtText: {
+    color: '#fff',
+    fontWeight: 'bold'
+  },
+});
+
+export default ProfileScreen;

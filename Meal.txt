@@ -1,0 +1,329 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const MealScreen = () => {
+  const [meals, setMeals] = useState({
+    breakfast: 0,
+    lunch: 0,
+    dinner: 0,
+  });
+  const [tempValues, setTempValues] = useState({
+    breakfast: '',
+    lunch: '',
+    dinner: '',
+  });
+
+  const mealTypes = [
+    { key: 'breakfast', name: 'อาหารเช้า', icon: 'sunny', color: '#FFD700' },
+    { key: 'lunch', name: 'อาหารกลางวัน', icon: 'partly-sunny', color: '#FF8C00' },
+    { key: 'dinner', name: 'อาหารเย็น', icon: 'moon', color: '#4169E1' },
+  ];
+
+  useEffect(() => {
+    loadMeals();
+  }, []);
+
+  const loadMeals = async () => {
+    try {
+      const mealsData = await AsyncStorage.getItem('meals');
+      if (mealsData) {
+        const parsedMeals = JSON.parse(mealsData);
+        setMeals(parsedMeals);
+        setTempValues({
+          breakfast: parsedMeals.breakfast?.toString() || '',
+          lunch: parsedMeals.lunch?.toString() || '',
+          dinner: parsedMeals.dinner?.toString() || '',
+        });
+      }
+    } catch (error) {
+      console.error('Error loading meals:', error);
+    }
+  };
+
+  const saveMeal = async (mealType, calories) => {
+    try {
+      const calorieValue = parseInt(calories) || 0;
+      const updatedMeals = {
+        ...meals,
+        [mealType]: calorieValue,
+      };
+      
+      setMeals(updatedMeals);
+      await AsyncStorage.setItem('meals', JSON.stringify(updatedMeals));
+      
+      Alert.alert('สำเร็จ!', `บันทึก${mealTypes.find(m => m.key === mealType)?.name}เรียบร้อยแล้ว`);
+    } catch (error) {
+      console.error('Error saving meal:', error);
+      Alert.alert('ผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
+    }
+  };
+
+  const clearAllMeals = () => {
+    Alert.alert(
+      'ยืนยันการล้างข้อมูล',
+      'คุณต้องการล้างข้อมูลอาหารทั้งหมดใช่หรือไม่?',
+      [
+        { text: 'ยกเลิก', style: 'cancel' },
+        {
+          text: 'ล้างข้อมูล',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const clearedMeals = { breakfast: 0, lunch: 0, dinner: 0 };
+              setMeals(clearedMeals);
+              setTempValues({ breakfast: '', lunch: '', dinner: '' });
+              await AsyncStorage.setItem('meals', JSON.stringify(clearedMeals));
+              Alert.alert('สำเร็จ!', 'ล้างข้อมูลอาหารเรียบร้อยแล้ว');
+            } catch (error) {
+              console.error('Error clearing meals:', error);
+              Alert.alert('ผิดพลาด', 'ไม่สามารถล้างข้อมูลได้');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const getTotalCalories = () => {
+    return Object.values(meals).reduce((sum, calories) => sum + (calories || 0), 0);
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      {/* Header Card */}
+      <View style={styles.headerCard}>
+        <Text style={styles.title}>บันทึกอาหาร</Text>
+        <Text style={styles.subtitle}>กรอกจำนวนแคลอรี่ในแต่ละมื้อ</Text>
+        
+        {/* Total Calories Display */}
+        <View style={styles.totalCaloriesCard}>
+          <Text style={styles.totalLabel}>แคลอรี่รวมวันนี้</Text>
+          <Text style={styles.totalValue}>{getTotalCalories()} แคลอรี่</Text>
+        </View>
+      </View>
+
+      {/* Meal Cards */}
+      {mealTypes.map((meal) => (
+        <View key={meal.key} style={styles.mealCard}>
+          <View style={styles.mealHeader}>
+            <View style={styles.mealTitleContainer}>
+              <Ionicons 
+                name={meal.icon} 
+                size={24} 
+                color={meal.color} 
+                style={styles.mealIcon}
+              />
+              <Text style={styles.mealTitle}>{meal.name}</Text>
+            </View>
+            <View style={styles.currentCaloriesContainer}>
+              <Text style={styles.currentCaloriesValue}>{meals[meal.key]}</Text>
+              <Text style={styles.currentCaloriesLabel}>แคลอรี่</Text>
+            </View>
+          </View>
+          
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.calorieInput}
+              placeholder="กรอกจำนวนแคลอรี่"
+              placeholderTextColor="#666"
+              value={tempValues[meal.key]}
+              onChangeText={(text) => 
+                setTempValues(prev => ({ ...prev, [meal.key]: text }))
+              }
+              keyboardType="numeric"
+            />
+            <TouchableOpacity
+              style={[styles.saveButton, { backgroundColor: meal.color }]}
+              onPress={() => saveMeal(meal.key, tempValues[meal.key])}
+            >
+              <Ionicons name="save" size={20} color="white" />
+              <Text style={styles.saveButtonText}>บันทึก</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Quick Add Buttons */}
+          <View style={styles.quickAddContainer}>
+            <Text style={styles.quickAddTitle}>เพิ่มเร็ว:</Text>
+            <View style={styles.quickAddButtons}>
+              {[100, 200, 300, 500].map((calories) => (
+                <TouchableOpacity
+                  key={calories}
+                  style={styles.quickAddButton}
+                  onPress={() => {
+                    const newValue = (parseInt(tempValues[meal.key]) || 0) + calories;
+                    setTempValues(prev => ({ 
+                      ...prev, 
+                      [meal.key]: newValue.toString() 
+                    }));
+                  }}
+                >
+                  <Text style={styles.quickAddButtonText}>+{calories}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        </View>
+      ))}
+
+      {/* Clear All Button */}
+      <TouchableOpacity style={styles.clearButton} onPress={clearAllMeals}>
+        <Ionicons name="trash" size={20} color="#FF6B6B" />
+        <Text style={styles.clearButtonText}>ล้างข้อมูลทั้งหมด</Text>
+      </TouchableOpacity>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+    padding: 16,
+  },
+  headerCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#999',
+    marginBottom: 16,
+  },
+  totalCaloriesCard: {
+    backgroundColor: '#3a3a3a',
+    padding: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  totalLabel: {
+    fontSize: 16,
+    color: '#999',
+    marginBottom: 4,
+  },
+  totalValue: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#00D4AA',
+  },
+  mealCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  mealHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  mealTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  mealIcon: {
+    marginRight: 8,
+  },
+  mealTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  currentCaloriesContainer: {
+    alignItems: 'center',
+  },
+  currentCaloriesValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#00D4AA',
+  },
+  currentCaloriesLabel: {
+    fontSize: 12,
+    color: '#999',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+  },
+  calorieInput: {
+    flex: 1,
+    backgroundColor: '#3a3a3a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    gap: 4,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  quickAddContainer: {
+    marginTop: 8,
+  },
+  quickAddTitle: {
+    fontSize: 14,
+    color: '#999',
+    marginBottom: 8,
+  },
+  quickAddButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  quickAddButton: {
+    backgroundColor: '#444',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  quickAddButtonText: {
+    color: '#00D4AA',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  clearButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#2a2a2a',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 20,
+    gap: 8,
+  },
+  clearButtonText: {
+    color: '#FF6B6B',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
+
+export default MealScreen;

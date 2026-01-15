@@ -1,0 +1,145 @@
+import React, { useState } from "react";
+import { View, Text, TextInput, Button, StyleSheet, Alert } from "react-native";
+
+// ฟังก์ชันคำนวณ BMR แบบ Manual (Harris-Benedict Equation)
+const calculateBMRManual = ({ weight, height, age, gender }) => {
+  if (gender === "male") {
+    return Math.round(88.362 + 13.397 * weight + 4.799 * height - 5.677 * age);
+  } else {
+    return Math.round(447.593 + 9.247 * weight + 3.098 * height - 4.330 * age);
+  }
+};
+
+// ฟังก์ชันเรียก LogMeal API
+const calculateBMRLogMeal = async ({ weight, height, age, gender }) => {
+  try {
+    const response = await fetch(
+      `https://api.logmeal.es/v2/nutrition/getRecommendedDailyIntake?sex=${gender}&height=${height}&weight=${weight}&age=${age}`,
+      {
+        method: "GET",
+        headers: {
+          "Authorization": "Bearer 23610967532dc9373166123091d8082cce2b8c24", // <== API Key ของคุณ
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`LogMeal API failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("LogMeal API Response:", data);
+
+    // ตรวจสอบ response ที่ได้จาก LogMeal
+    if (data?.recommendedIntake?.bmr) {
+      return Math.round(data.recommendedIntake.bmr);
+    } else if (data?.bmr) {
+      return Math.round(data.bmr);
+    } else {
+      throw new Error("No BMR in response");
+    }
+  } catch (err) {
+    console.warn("LogMeal API error, fallback manual:", err.message);
+    return null;
+  }
+};
+
+export default function ProfileScreen() {
+  const [profile, setProfile] = useState({
+    height: "",
+    weight: "",
+    age: "",
+    gender: "male", // default
+  });
+
+  const [bmr, setBmr] = useState(null);
+
+  const handleSave = async () => {
+    const profileData = {
+      ...profile,
+      height: parseFloat(profile.height),
+      weight: parseFloat(profile.weight),
+      age: parseInt(profile.age),
+    };
+
+    let bmrValue = await calculateBMRLogMeal(profileData);
+
+    if (!bmrValue) {
+      // fallback manual calculation
+      bmrValue = calculateBMRManual(profileData);
+    }
+
+    setBmr(bmrValue);
+    Alert.alert("สำเร็จ", `BMR ของคุณคือ ${bmrValue} kcal/day`);
+  };
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>โปรไฟล์ของคุณ</Text>
+
+      <TextInput
+        style={styles.input}
+        placeholder="ส่วนสูง (cm)"
+        keyboardType="numeric"
+        value={profile.height}
+        onChangeText={(text) => setProfile({ ...profile, height: text })}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="น้ำหนัก (kg)"
+        keyboardType="numeric"
+        value={profile.weight}
+        onChangeText={(text) => setProfile({ ...profile, weight: text })}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="อายุ (ปี)"
+        keyboardType="numeric"
+        value={profile.age}
+        onChangeText={(text) => setProfile({ ...profile, age: text })}
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="เพศ (male/female)"
+        value={profile.gender}
+        onChangeText={(text) => setProfile({ ...profile, gender: text.toLowerCase() })}
+      />
+
+      <Button title="บันทึกข้อมูล" onPress={handleSave} />
+
+      {bmr && (
+        <Text style={styles.result}>BMR ของคุณคือ: {bmr} kcal/day</Text>
+      )}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 20,
+    backgroundColor: "#fff",
+  },
+  title: {
+    fontSize: 20,
+    marginBottom: 20,
+    textAlign: "center",
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: "#ccc",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 15,
+  },
+  result: {
+    marginTop: 20,
+    fontSize: 18,
+    fontWeight: "bold",
+    textAlign: "center",
+  },
+});

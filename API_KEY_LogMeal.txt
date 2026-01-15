@@ -1,0 +1,2 @@
+23610967532dc9373166123091d8082cce2b8c24
+`https://api.logmeal.es/v2/nutrition/getRecommendedDailyIntake?sex=${gender}&height=${height}&weight=${weight}&age=${age}`

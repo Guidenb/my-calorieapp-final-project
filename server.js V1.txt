@@ -1,0 +1,139 @@
+// server.js (ฉบับสมบูรณ์)
+
+const express = require('express');
+const mysql = require('mysql2/promise'); // ใช้ mysql2/promise เพื่อรองรับ async/await
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const dotenv = require('dotenv');
+
+dotenv.config(); // โหลดตัวแปรจากไฟล์ .env
+const app = express();
+const port = 3000;
+const saltRounds = 10;
+// ใช้ค่าจาก .env เสมอ สำหรับคีย์ลับ
+const JWT_SECRET = process.env.JWT_SECRET; 
+
+// Middleware
+app.use(express.json()); // สำหรับอ่าน JSON body จาก React Native
+
+// 1. ตั้งค่าการเชื่อมต่อฐานข้อมูล (DB Connection Pool)
+const db = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD, // ใช้ค่าจาก .env เท่านั้น
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+});
+
+// ตรวจสอบการเชื่อมต่อฐานข้อมูลเมื่อ Server เริ่มทำงาน
+db.getConnection()
+    .then(connection => {
+        console.log('Database connected successfully!');
+        connection.release();
+    })
+    .catch(err => {
+        console.error('Database connection failed:', err.message);
+        console.error('Please check your .env file and MySQL Server status.');
+        process.exit(1); // หยุด Server หากเชื่อมต่อ DB ไม่ได้
+    });
+
+
+// ===================================
+// ROUTE: REGISTER (ลงทะเบียน)
+// ===================================
+app.post('/register', async (req, res) => {
+    const { name, email, password } = req.body;
+
+    if (!email || !password) {
+        // HTTP 400 Bad Request
+        return res.status(400).json({ message: 'Email and password are required' });
+    }
+    
+    try {
+        // ตรวจสอบว่ามีอีเมลนี้อยู่แล้วหรือไม่
+        const [users] = await db.execute('SELECT email FROM users WHERE email = ?', [email]);
+        if (users.length > 0) {
+            // HTTP 409 Conflict
+            return res.status(409).json({ message: 'Email already exists' });
+        }
+
+        // เข้ารหัสรหัสผ่าน
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        // บันทึกผู้ใช้ใหม่ลงในฐานข้อมูล
+        const [result] = await db.execute(
+            'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
+            [name, email, hashedPassword]
+        );
+        
+        // HTTP 201 Created
+        res.status(201).json({ 
+            status: true, 
+            message: 'User registered successfully', 
+            userId: result.insertId 
+        });
+
+    } catch (error) {
+        console.error('Registration Error:', error);
+        // HTTP 500 Internal Server Error
+        res.status(500).json({ message: 'Server error during registration' });
+    }
+});
+
+// ===================================
+// ROUTE: LOGIN (เข้าสู่ระบบ)
+// ===================================
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(400).json({ message: 'Email and password are required' });
+    }
+
+    try {
+        // 1. ค้นหาผู้ใช้ด้วยอีเมล
+        const [users] = await db.execute('SELECT id, name, email, password FROM users WHERE email = ?', [email]);
+        const user = users[0];
+        
+        // 2. ตรวจสอบการยืนยันตัวตน (รวมความผิดพลาดในการค้นหาและรหัสผ่านไม่ตรงกันไว้ด้วยกัน)
+        if (!user) {
+            // HTTP 401 Unauthorized
+            return res.status(401).json({ message: 'Email not found or credentials incorrect' });
+        }
+        
+        const passwordMatch = await bcrypt.compare(password, user.password);
+
+        if (!passwordMatch) {
+            // HTTP 401 Unauthorized
+            return res.status(401).json({ message: 'Email not found or credentials incorrect' });
+        }
+
+        // 3. สร้าง JWT Token (ถ้าเข้าสู่ระบบสำเร็จ)
+        const token = jwt.sign(
+            { id: user.id, email: user.email }, 
+            JWT_SECRET, 
+            { expiresIn: '1d' } // Token จะหมดอายุใน 1 วัน
+        );
+
+        // HTTP 200 OK
+        res.status(200).json({ 
+            status: true,
+            message: 'Login successful',
+            token: token,
+            user: { id: user.id, name: user.name, email: user.email }
+        });
+
+    } catch (error) {
+        console.error('Login Error:', error);
+        // HTTP 500 Internal Server Error
+        res.status(500).json({ message: 'Server error during login' });
+    }
+});
+
+// ===================================
+// START SERVER
+// ===================================
+app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+});

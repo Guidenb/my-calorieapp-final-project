@@ -1,0 +1,403 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import RNPickerSelect from 'react-native-picker-select';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const ProfileScreen = () => {
+  const [profile, setProfile] = useState({
+    name: '',
+    age: '',
+    weight: '',
+    height: '',
+    gender: '',
+    bmr: 0,
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    loadProfile();
+  }, []);
+
+  const loadProfile = async () => {
+    try {
+      const profileData = await AsyncStorage.getItem('profile');
+      if (profileData) {
+        setProfile(JSON.parse(profileData));
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!profile.name || !profile.age || !profile.weight || !profile.height || !profile.gender) {
+      Alert.alert('ข้อมูลไม่ครบ', 'กรุณากรอกข้อมูลให้ครบถ้วน');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const updatedProfile = { ...profile };
+      
+      // Calculate BMR using Urvi Paithankar API
+      await calculateBMR(updatedProfile);
+      
+      await AsyncStorage.setItem('profile', JSON.stringify(updatedProfile));
+      setProfile(updatedProfile);
+      
+      Alert.alert('สำเร็จ!', 'บันทึกข้อมูลโปรไฟล์เรียบร้อยแล้ว');
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      Alert.alert('ผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const calculateBMR = async (profileData) => {
+    const { height, weight, age, gender } = profileData;
+    
+    try {
+      // Try Urvi Paithankar API first
+      const response = await fetch(
+        `https://urvipaithankar.herokuapp.com/bmr/index.php/${height}/${weight}/${age}/${gender}`
+      );
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.data && data.data.bmr) {
+          profileData.bmr = Math.round(parseFloat(data.data.bmr));
+          return;
+        }
+      }
+      
+      // Fallback to manual calculation if API fails
+      console.warn('BMR API failed, using manual calculation');
+      calculateBMRManual(profileData);
+      
+    } catch (error) {
+      console.warn('BMR API error, using manual calculation:', error);
+      calculateBMRManual(profileData);
+    }
+  };
+
+  const calculateBMRManual = (profileData) => {
+    const { height, weight, age, gender } = profileData;
+    const heightNum = parseFloat(height);
+    const weightNum = parseFloat(weight);
+    const ageNum = parseInt(age);
+    
+    // Mifflin-St Jeor Equation
+    let bmr;
+    if (gender.toLowerCase() === 'male') {
+      bmr = 10 * weightNum + 6.25 * heightNum - 5 * ageNum + 5;
+    } else {
+      bmr = 10 * weightNum + 6.25 * heightNum - 5 * ageNum - 161;
+    }
+    
+    profileData.bmr = Math.round(bmr);
+  };
+
+  const getBMICategory = () => {
+    if (!profile.weight || !profile.height) return '';
+    
+    const weight = parseFloat(profile.weight);
+    const height = parseFloat(profile.height) / 100; // convert cm to m
+    const bmi = weight / (height * height);
+    
+    if (bmi < 18.5) return 'น้ำหนักน้อย';
+    if (bmi < 25) return 'น้ำหนักปกติ';
+    if (bmi < 30) return 'น้ำหนักเกิน';
+    return 'อ้วน';
+  };
+
+  const getBMI = () => {
+    if (!profile.weight || !profile.height) return 0;
+    
+    const weight = parseFloat(profile.weight);
+    const height = parseFloat(profile.height) / 100;
+    return (weight / (height * height)).toFixed(1);
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      {/* Header Card */}
+      <View style={styles.headerCard}>
+        <Text style={styles.title}>โปรไฟล์ส่วนตัว</Text>
+        <Text style={styles.subtitle}>กรอกข้อมูลเพื่อคำนวณ BMR</Text>
+      </View>
+
+      {/* BMR & BMI Display Card */}
+      {profile.bmr > 0 && (
+        <View style={styles.statsCard}>
+          <Text style={styles.cardTitle}>สถิติสุขภาพ</Text>
+          <View style={styles.statsContainer}>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{profile.bmr}</Text>
+              <Text style={styles.statLabel}>BMR (แคลอรี่/วัน)</Text>
+            </View>
+            <View style={styles.statItem}>
+              <Text style={styles.statValue}>{getBMI()}</Text>
+              <Text style={styles.statLabel}>BMI</Text>
+            </View>
+          </View>
+          <View style={styles.bmiCategory}>
+            <Text style={styles.bmiCategoryText}>
+              สถานะ: <Text style={styles.bmiCategoryValue}>{getBMICategory()}</Text>
+            </Text>
+          </View>
+        </View>
+      )}
+
+      {/* Profile Form Card */}
+      <View style={styles.formCard}>
+        <Text style={styles.cardTitle}>ข้อมูลส่วนตัว</Text>
+        
+        <Text style={styles.inputLabel}>ชื่อ</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="กรอกชื่อของคุณ"
+          placeholderTextColor="#666"
+          value={profile.name}
+          onChangeText={(text) => setProfile(prev => ({ ...prev, name: text }))}
+        />
+        
+        <Text style={styles.inputLabel}>อายุ (ปี)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="กรอกอายุ"
+          placeholderTextColor="#666"
+          value={profile.age}
+          onChangeText={(text) => setProfile(prev => ({ ...prev, age: text }))}
+          keyboardType="numeric"
+        />
+        
+        <Text style={styles.inputLabel}>น้ำหนัก (กิโลกรัม)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="กรอกน้ำหนัก"
+          placeholderTextColor="#666"
+          value={profile.weight}
+          onChangeText={(text) => setProfile(prev => ({ ...prev, weight: text }))}
+          keyboardType="numeric"
+        />
+        
+        <Text style={styles.inputLabel}>ส่วนสูง (เซนติเมตร)</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="กรอกส่วนสูง"
+          placeholderTextColor="#666"
+          value={profile.height}
+          onChangeText={(text) => setProfile(prev => ({ ...prev, height: text }))}
+          keyboardType="numeric"
+        />
+        
+        <Text style={styles.inputLabel}>เพศ</Text>
+        <View style={styles.pickerContainer}>
+          <RNPickerSelect
+            onValueChange={(value) => setProfile(prev => ({ ...prev, gender: value }))}
+            items={[
+              { label: 'ชาย', value: 'male' },
+              { label: 'หญิง', value: 'female' },
+            ]}
+            value={profile.gender}
+            style={{
+              inputIOS: styles.picker,
+              inputAndroid: styles.picker,
+              placeholder: styles.pickerPlaceholder,
+            }}
+            placeholder={{
+              label: 'เลือกเพศ...',
+              value: null,
+            }}
+          />
+        </View>
+        
+        <TouchableOpacity 
+          style={[styles.saveButton, isLoading && styles.saveButtonDisabled]} 
+          onPress={saveProfile}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Ionicons name="calculator" size={20} color="white" />
+          )}
+          <Text style={styles.saveButtonText}>
+            {isLoading ? 'กำลังคำนวณ BMR...' : 'คำนวณ BMR และบันทึก'}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* BMR Info Card */}
+      <View style={styles.infoCard}>
+        <Text style={styles.cardTitle}>เกี่ยวกับ BMR</Text>
+        <Text style={styles.infoText}>
+          BMR (Basal Metabolic Rate) คือ จำนวนแคลอรี่ที่ร่างกายต้องการในการทำงานขั้นพื้นฐาน 
+          เช่น การหายใจ การเต้นของหัวใจ และการทำงานของอวัยวะต่างๆ ขณะพักผ่อน
+        </Text>
+        <Text style={styles.infoText}>
+          การคำนวณใช้สูตร Mifflin-St Jeor ซึ่งเป็นสูตรที่แม่นยำที่สุดในปัจจุบัน
+        </Text>
+        <View style={styles.apiInfo}>
+          <Ionicons name="cloud" size={16} color="#00D4AA" />
+          <Text style={styles.apiInfoText}>ใช้ Urvi Paithankar API เพื่อความแม่นยำสูงสุด</Text>
+        </View>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+    padding: 16,
+  },
+  headerCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#999',
+  },
+  statsCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 16,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 16,
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statValue: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: '#00D4AA',
+    marginBottom: 4,
+  },
+  statLabel: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+  },
+  bmiCategory: {
+    backgroundColor: '#3a3a3a',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  bmiCategoryText: {
+    fontSize: 16,
+    color: '#fff',
+  },
+  bmiCategoryValue: {
+    color: '#00D4AA',
+    fontWeight: 'bold',
+  },
+  formCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 16,
+    color: '#fff',
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: '#3a3a3a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  pickerContainer: {
+    backgroundColor: '#3a3a3a',
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  picker: {
+    color: '#fff',
+    padding: 12,
+  },
+  pickerPlaceholder: {
+    color: '#666',
+  },
+  saveButton: {
+    backgroundColor: '#00D4AA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 8,
+    gap: 8,
+  },
+  saveButtonDisabled: {
+    backgroundColor: '#666',
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  infoCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#ccc',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  apiInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3a3a3a',
+    padding: 12,
+    borderRadius: 8,
+    gap: 8,
+  },
+  apiInfoText: {
+    fontSize: 14,
+    color: '#00D4AA',
+    flex: 1,
+  },
+});
+
+export default ProfileScreen;

@@ -1,0 +1,113 @@
+import React from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { NavigationContainer } from '@react-navigation/native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Font from 'expo-font';
+import { useFonts } from 'expo-font';
+import AppLoading from 'expo-app-loading';
+
+// Import screens
+import HomeScreen from './src/screens/HomeScreen';
+import MealScreen from './src/screens/MealScreen';
+import ProfileScreen from './src/screens/ProfileScreen';
+
+// Create Bottom Tab Navigator
+const Tab = createBottomTabNavigator();
+
+export default function App() {
+  const [fontsLoaded] = useFonts({
+    // Load Ionicons font explicitly
+    ...Ionicons.font,
+  });
+
+  if (!fontsLoaded) {
+    return <AppLoading />;
+  }
+
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <StatusBar style="light" backgroundColor="#1a1a1a" translucent={false} />
+        <Tab.Navigator
+          screenOptions={({ route }) => ({
+            tabBarIcon: ({ focused, color, size }) => {
+              let iconName;
+
+              switch (route.name) {
+                case 'Home':
+                  iconName = focused ? 'home' : 'home-outline';
+                  break;
+                case 'Meal':
+                  iconName = focused ? 'restaurant' : 'restaurant-outline';
+                  break;
+                case 'Profile':
+                  iconName = focused ? 'person' : 'person-outline';
+                  break;
+                default:
+                  iconName = 'help-outline';
+              }
+
+              return <Ionicons name={iconName} size={size} color={color} />;
+            },
+            tabBarActiveTintColor: '#00D4AA',
+            tabBarInactiveTintColor: '#666',
+            tabBarStyle: {
+              backgroundColor: '#2a2a2a',
+              borderTopColor: '#444',
+              height: 65,
+              paddingBottom: 8,
+              paddingTop: 8,
+              borderTopWidth: 1,
+            },
+            headerStyle: {
+              backgroundColor: '#1a1a1a',
+              elevation: 0,
+              shadowOpacity: 0,
+              borderBottomWidth: 1,
+              borderBottomColor: '#444',
+            },
+            headerTintColor: '#fff',
+            headerTitleStyle: {
+              fontWeight: 'bold',
+              fontSize: 18,
+            },
+            tabBarLabelStyle: {
+              fontSize: 12,
+              fontWeight: '500',
+            },
+            // SDK 51 compatible screen options
+            headerShown: true,
+            tabBarHideOnKeyboard: true,
+          })}
+        >
+          <Tab.Screen 
+            name="Home" 
+            component={HomeScreen} 
+            options={{ 
+              title: 'หน้าหลัก',
+              headerTitle: 'CalorieApp - หน้าหลัก'
+            }}
+          />
+          <Tab.Screen 
+            name="Meal" 
+            component={MealScreen} 
+            options={{ 
+              title: 'อาหาร',
+              headerTitle: 'CalorieApp - อาหาร'
+            }}
+          />
+          <Tab.Screen 
+            name="Profile" 
+            component={ProfileScreen} 
+            options={{ 
+              title: 'โปรไฟล์',
+              headerTitle: 'CalorieApp - โปรไฟล์'
+            }}
+          />
+        </Tab.Navigator>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
+}

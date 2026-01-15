@@ -1,0 +1,326 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  TextInput,
+  Alert,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import RNPickerSelect from 'react-native-picker-select';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+const HomeScreen = () => {
+  const [profile, setProfile] = useState({});
+  const [goals, setGoals] = useState({
+    calorieGoal: '',
+    activityLevel: 'sedentary',
+  });
+  const [todayCalories, setTodayCalories] = useState(0);
+  const [tdee, setTdee] = useState(0);
+
+  const activityLevels = [
+    { label: 'ไม่ค่อยออกกำลังกาย', value: 'sedentary', multiplier: 1.2 },
+    { label: 'ออกกำลังกายเบาๆ 1-3 วัน/สัปดาห์', value: 'light', multiplier: 1.375 },
+    { label: 'ออกกำลังกายปานกลาง 3-5 วัน/สัปดาห์', value: 'moderate', multiplier: 1.55 },
+    { label: 'ออกกำลังกายหนัก 6-7 วัน/สัปดาห์', value: 'active', multiplier: 1.725 },
+    { label: 'ออกกำลังกายหนักมาก', value: 'very_active', multiplier: 1.9 },
+  ];
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const profileData = await AsyncStorage.getItem('profile');
+      const goalsData = await AsyncStorage.getItem('goals');
+      const mealsData = await AsyncStorage.getItem('meals');
+
+      if (profileData) {
+        const parsedProfile = JSON.parse(profileData);
+        setProfile(parsedProfile);
+        calculateTDEE(parsedProfile, goals.activityLevel);
+      }
+      if (goalsData) {
+        const parsedGoals = JSON.parse(goalsData);
+        setGoals(parsedGoals);
+        if (profileData) {
+          calculateTDEE(JSON.parse(profileData), parsedGoals.activityLevel);
+        }
+      }
+      if (mealsData) {
+        const parsedMeals = JSON.parse(mealsData);
+        const totalCalories = Object.values(parsedMeals).reduce((sum, calories) => sum + (calories || 0), 0);
+        setTodayCalories(totalCalories);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+    }
+  };
+
+  const calculateTDEE = (profileData, activityLevel) => {
+    if (profileData.bmr && activityLevel) {
+      const activityMultiplier = activityLevels.find(level => level.value === activityLevel)?.multiplier || 1.2;
+      const calculatedTDEE = Math.round(profileData.bmr * activityMultiplier);
+      setTdee(calculatedTDEE);
+    }
+  };
+
+  const saveGoals = async () => {
+    try {
+      await AsyncStorage.setItem('goals', JSON.stringify(goals));
+      calculateTDEE(profile, goals.activityLevel);
+      Alert.alert('สำเร็จ!', 'บันทึกเป้าหมายเรียบร้อยแล้ว');
+    } catch (error) {
+      console.error('Error saving goals:', error);
+      Alert.alert('ผิดพลาด', 'ไม่สามารถบันทึกข้อมูลได้');
+    }
+  };
+
+  const getRemainingCalories = () => {
+    const goalCalories = parseInt(goals.calorieGoal) || tdee;
+    return goalCalories - todayCalories;
+  };
+
+  const getProgressPercentage = () => {
+    const goalCalories = parseInt(goals.calorieGoal) || tdee;
+    if (goalCalories === 0) return 0;
+    return Math.min((todayCalories / goalCalories) * 100, 100);
+  };
+
+  return (
+    <ScrollView style={styles.container}>
+      {/* Header Card */}
+      <View style={styles.headerCard}>
+        <Text style={styles.greeting}>สวัสดี! {profile.name || 'ผู้ใช้งาน'}</Text>
+        <Text style={styles.subtitle}>จัดการแคลอรี่ของคุณวันนี้</Text>
+      </View>
+
+      {/* Calorie Progress Card */}
+      <View style={styles.progressCard}>
+        <Text style={styles.cardTitle}>ความคืบหน้าวันนี้</Text>
+        <View style={styles.calorieDisplay}>
+          <View style={styles.calorieItem}>
+            <Text style={styles.calorieNumber}>{todayCalories}</Text>
+            <Text style={styles.calorieLabel}>ได้รับ</Text>
+          </View>
+          <View style={styles.calorieItem}>
+            <Text style={styles.calorieNumber}>{parseInt(goals.calorieGoal) || tdee}</Text>
+            <Text style={styles.calorieLabel}>เป้าหมาย</Text>
+          </View>
+          <View style={styles.calorieItem}>
+            <Text style={[styles.calorieNumber, { color: getRemainingCalories() < 0 ? '#FF6B6B' : '#00D4AA' }]}>
+              {getRemainingCalories()}
+            </Text>
+            <Text style={styles.calorieLabel}>เหลือ</Text>
+          </View>
+        </View>
+        <View style={styles.progressBar}>
+          <View 
+            style={[styles.progressFill, { width: `${getProgressPercentage()}%` }]}
+          />
+        </View>
+        <Text style={styles.progressText}>{getProgressPercentage().toFixed(1)}% ของเป้าหมาย</Text>
+      </View>
+
+      {/* TDEE Info Card */}
+      {profile.bmr && (
+        <View style={styles.infoCard}>
+          <Text style={styles.cardTitle}>ข้อมูลการเผาผลาญ</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>BMR (การเผาผลาญพื้นฐาน):</Text>
+            <Text style={styles.infoValue}>{profile.bmr} แคลอรี่</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>TDEE (แคลอรี่ที่ต้องการ/วัน):</Text>
+            <Text style={styles.infoValue}>{tdee} แคลอรี่</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Goals Setting Card */}
+      <View style={styles.settingCard}>
+        <Text style={styles.cardTitle}>ตั้งเป้าหมาย</Text>
+        
+        <Text style={styles.inputLabel}>เป้าหมายแคลอรี่ต่อวัน</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="ระบุแคลอรี่เป้าหมาย"
+          placeholderTextColor="#666"
+          value={goals.calorieGoal}
+          onChangeText={(text) => setGoals(prev => ({ ...prev, calorieGoal: text }))}
+          keyboardType="numeric"
+        />
+        
+        <Text style={styles.inputLabel}>ระดับกิจกรรม (TDEE)</Text>
+        <View style={styles.pickerContainer}>
+          <RNPickerSelect
+            onValueChange={(value) => setGoals(prev => ({ ...prev, activityLevel: value }))}
+            items={activityLevels.map(level => ({
+              label: level.label,
+              value: level.value,
+            }))}
+            value={goals.activityLevel}
+            style={{
+              inputIOS: styles.picker,
+              inputAndroid: styles.picker,
+              placeholder: styles.pickerPlaceholder,
+            }}
+            placeholder={{
+              label: 'เลือกระดับกิจกรรม...',
+              value: null,
+            }}
+          />
+        </View>
+        
+        <TouchableOpacity style={styles.saveButton} onPress={saveGoals}>
+          <Ionicons name="save" size={20} color="white" />
+          <Text style={styles.saveButtonText}>บันทึกเป้าหมาย</Text>
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#1a1a1a',
+    padding: 16,
+  },
+  headerCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  greeting: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 4,
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#999',
+  },
+  progressCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: 16,
+  },
+  calorieDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  calorieItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  calorieNumber: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#00D4AA',
+    marginBottom: 4,
+  },
+  calorieLabel: {
+    fontSize: 14,
+    color: '#999',
+  },
+  progressBar: {
+    height: 8,
+    backgroundColor: '#444',
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#00D4AA',
+    borderRadius: 4,
+  },
+  progressText: {
+    textAlign: 'center',
+    color: '#999',
+    fontSize: 14,
+  },
+  infoCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  infoLabel: {
+    fontSize: 16,
+    color: '#fff',
+    flex: 1,
+  },
+  infoValue: {
+    fontSize: 16,
+    color: '#00D4AA',
+    fontWeight: 'bold',
+  },
+  settingCard: {
+    backgroundColor: '#2a2a2a',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  inputLabel: {
+    fontSize: 16,
+    color: '#fff',
+    marginBottom: 8,
+  },
+  input: {
+    backgroundColor: '#3a3a3a',
+    borderRadius: 8,
+    padding: 12,
+    color: '#fff',
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  pickerContainer: {
+    backgroundColor: '#3a3a3a',
+    borderRadius: 8,
+    marginBottom: 20,
+  },
+  picker: {
+    color: '#fff',
+    padding: 12,
+  },
+  pickerPlaceholder: {
+    color: '#666',
+  },
+  saveButton: {
+    backgroundColor: '#00D4AA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 8,
+    gap: 8,
+  },
+  saveButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+});
+
+export default HomeScreen;
