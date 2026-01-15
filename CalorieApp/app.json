@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "CalorieApp",
+    "slug": "calorie-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#1a1a1a",
+    "primaryColor": "#00D4AA",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a1a1a"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.calorieapp.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1a1a1a"
+      },
+      "package": "com.calorieapp.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "backgroundColor": "#1a1a1a"
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}
