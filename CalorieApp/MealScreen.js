@@ -18,7 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 
 // ⚠️ คำเตือน: หลังจากทดสอบเสร็จ อย่าลืมไป Regenerate Key ใหม่เพื่อความปลอดภัย
-const GEMINI_API_KEY = 'AIzaSyDrQEjzMbzyiSef0ZqCNUj6SYrxyiLp26Y';
+const GEMINI_API_KEY = 'YOUR_API_KEY_HERE';
 
 // ✅ ย้าย MealCard ออกมาข้างนอก เพื่อประสิทธิภาพที่ดีขึ้น
 const MealCard = ({ title, mealType, meal, onDelete, onImagePress }) => (
