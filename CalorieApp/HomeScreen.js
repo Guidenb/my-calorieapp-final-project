@@ -21,9 +21,9 @@ const HomeScreen = ({ navigation }) => {
   const { 
     dailyCalorieTarget, 
     setDailyCalorieTarget, 
-    todayConsumedCalories, 
+    todayConsumedCalories,       // ← อ่านจาก Context โดยตรง (MealScreen อัปเดตนี้)
     setTodayConsumedCalories,
-    profile: contextProfile // ดึง profile จาก Context
+    profile: contextProfile      // ← profile จาก Context
   } = useContext(CalorieContext);
   
   const [userInfo, setUserInfo] = useState({
@@ -52,26 +52,39 @@ const HomeScreen = ({ navigation }) => {
     { value: 1.9, text: 'ออกกำลังกายหนักมาก/งานหนัก ' },
   ];
 
-  // 🔥 อัพเดท userInfo ทุกครั้งที่ contextProfile เปลี่ยน
+  // ───────────────────────────────────────────
+  // 1. อัปเดต userInfo เมื่อ contextProfile เปลี่ยน
+  // ───────────────────────────────────────────
   useEffect(() => {
     if (contextProfile && contextProfile.bmr > 0) {
       setUserInfo(contextProfile);
     }
   }, [contextProfile]);
 
+  // ───────────────────────────────────────────
+  // 2. useFocusEffect → โหลด homeData เมื่อกลับมาหน้านี้
+  //    ไม่โหลด mealData จากนี้แล้วเพราะใช้ Context แทน
+  // ───────────────────────────────────────────
   useFocusEffect(
     useCallback(() => {
-      loadData();
-    }, [])
+      loadHomeSettings();                         // โหลดเฉพาะ targetWeight / targetDays / activity
+    }, [])                                        // เปิด [] ได้เพราะ loadHomeSettings ไม่เปลี่ยน
   );
-  
 
+  // ───────────────────────────────────────────
+  // 3. คำนวณใหม่ทุกครั้งที่ input เปลี่ยน
+  // ───────────────────────────────────────────
   useEffect(() => {
     if (userInfo.bmr > 0) {
       calculateCalories();
     }
   }, [userInfo, targetWeight, targetDays, activityLevel]);
 
+  // ───────────────────────────────────────────
+  // 4. ★ คำนวณ calorieStatus จาก Context โดยตรง
+  //    todayConsumedCalories จะเปลี่ยนทันที
+  //    พอ MealScreen เรียก setTodayConsumedCalories
+  // ───────────────────────────────────────────
   useEffect(() => {
     if (dailyCalorieTarget > 0) {
       const percentage = (todayConsumedCalories / dailyCalorieTarget) * 100;
@@ -83,23 +96,24 @@ const HomeScreen = ({ navigation }) => {
         setCalorieStatus('เกิน');
       }
     }
-  }, [todayConsumedCalories, dailyCalorieTarget]);
+  }, [todayConsumedCalories, dailyCalorieTarget]);   // depend กับ Context value เลย
 
-  const loadData = async () => {
+  // ───────────────────────────────────────────
+  // 5. โหลดเฉพาะ homeData (activity, target) จาก AsyncStorage
+  //    ★ ไม่โหลด mealData / consumedCalories แล้ว
+  // ───────────────────────────────────────────
+  const loadHomeSettings = async () => {
     try {
-      // 🔥 โหลดจาก AsyncStorage (เป็น backup)
-      const userData = await AsyncStorage.getItem('userData');
-      const homeData = await AsyncStorage.getItem('homeData');
-      const mealData = await AsyncStorage.getItem('mealData');
-
-      if (userData) {
-        const data = JSON.parse(userData);
-        // 🔥 ถ้า Context ยังไม่มีข้อมูล ให้ใช้จาก AsyncStorage
-        if (!contextProfile || contextProfile.bmr === 0) {
-          setUserInfo(data);
+      // backup profile จาก AsyncStorage (ถ้า Context ยังไม่มี)
+      if (!contextProfile || contextProfile.bmr === 0) {
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
+          setUserInfo(JSON.parse(userData));
         }
       }
 
+      // โหลด homeData สำหรับ targetWeight / targetDays / activity เท่านั้น
+      const homeData = await AsyncStorage.getItem('homeData');
       if (homeData) {
         const data = JSON.parse(homeData);
         setTargetWeight(data.targetWeight || '65');
@@ -108,16 +122,25 @@ const HomeScreen = ({ navigation }) => {
         setActivityText(data.activityText || activityLevels[0].text);
       }
 
-      if (mealData) {
-        const data = JSON.parse(mealData);
-        const consumed = data.consumedCalories || 0;
-        setTodayConsumedCalories(consumed);
+      // ★ ถ้า todayConsumedCalories ใน Context ยังเป็น 0 (เช่น เปิดแอปครั้งแรก)
+      //    จึง fallback อ่านจาก AsyncStorage แค่ครั้งเดียว
+      if (todayConsumedCalories === 0) {
+        const mealData = await AsyncStorage.getItem('mealData');
+        if (mealData) {
+          const data = JSON.parse(mealData);
+          if (data.consumedCalories) {
+            setTodayConsumedCalories(data.consumedCalories);
+          }
+        }
       }
     } catch (error) {
-      console.log('Error loading data:', error);
+      console.log('Error loading home settings:', error);
     }
   };
 
+  // ───────────────────────────────────────────
+  // 6. คำนวณ calorie target จาก BMR + activity + goal
+  // ───────────────────────────────────────────
   const calculateCalories = () => {
     const weight = parseFloat(userInfo.weight) || 70;
     const targetWt = parseFloat(targetWeight) || 65;
@@ -138,19 +161,12 @@ const HomeScreen = ({ navigation }) => {
     setWeightDifference(wtDifference);
     setDailyEnergyDifference(Math.round(dailyEnergyDiff));
 
-    syncDataToOtherScreens(roundedTarget, calculatedBMR, calculatedTDEE);
+    syncHomeData(roundedTarget, calculatedBMR, calculatedTDEE);
   };
 
-  const syncDataToOtherScreens = async (target, bmr, tdeeValue) => {
+  // บันทึก homeData + แปลง dailyTarget ใน mealData
+  const syncHomeData = async (target, bmr, tdeeValue) => {
     try {
-      const syncData = {
-        bmr: bmr || userInfo.bmr,
-        tdee: tdeeValue || tdee,
-        dailyCalorieTarget: target,
-        activityLevel,
-        activityText,
-      };
-      
       await AsyncStorage.setItem(
         'homeData',
         JSON.stringify({ 
@@ -158,24 +174,27 @@ const HomeScreen = ({ navigation }) => {
           targetDays, 
           activityLevel, 
           activityText, 
-          ...syncData 
+          bmr: bmr || userInfo.bmr,
+          tdee: tdeeValue || tdee,
+          dailyCalorieTarget: target,
         })
       );
 
-      const mealData = await AsyncStorage.getItem('mealData') || '{}';
-      const currentMealData = JSON.parse(mealData);
+      // อัปเดต dailyTarget ใน mealData เพื่อให้ MealScreen โหลดได้
+      const mealRaw = await AsyncStorage.getItem('mealData') || '{}';
+      const currentMealData = JSON.parse(mealRaw);
       await AsyncStorage.setItem(
         'mealData',
-        JSON.stringify({ 
-          ...currentMealData, 
-          dailyTarget: target 
-        })
+        JSON.stringify({ ...currentMealData, dailyTarget: target })
       );
     } catch (error) {
-      console.log('Error syncing data:', error);
+      console.log('Error syncing home data:', error);
     }
   };
 
+  // ───────────────────────────────────────────
+  // UI Components
+  // ───────────────────────────────────────────
   const CalorieCard = ({ title, value, unit, subtitle, color, status }) => (
     <View style={[styles.calorieCard, { borderLeftColor: color }]}>
       <Text style={styles.cardTitle}>{title}</Text>
@@ -252,15 +271,31 @@ const HomeScreen = ({ navigation }) => {
                 />
               </View>
 
-              {/* 🔥 แสดงข้อความอัพเดทแบบเรียลไทม์ */}
-              {contextProfile && contextProfile.bmr > 0 && (
-                <View style={styles.realtimeIndicator}>
-                  <Ionicons name="checkmark-circle" size={16} color="#4ECDC4" />
-                  <Text style={styles.realtimeText}>
-                    ข้อมูลอัพเดทแบบเรียลไทม์จาก Profile
+              {/* ★ แสดง consumed calories แบบ real-time จาก Context */}
+              <View style={styles.consumedBar}>
+                <View style={styles.consumedRow}>
+                  <Text style={styles.consumedLabel}>กินวันนี้</Text>
+                  <Text style={styles.consumedValue}>{todayConsumedCalories} <Text style={styles.consumedUnit}>/ {dailyCalorieTarget} kcal</Text></Text>
+                </View>
+                <View style={styles.progressBg}>
+                  <View style={[
+                    styles.progressFill,
+                    {
+                      width: `${Math.min((dailyCalorieTarget > 0 ? (todayConsumedCalories / dailyCalorieTarget) * 100 : 0), 100)}%`,
+                      backgroundColor: getStatusColor(calorieStatus),
+                    }
+                  ]} />
+                </View>
+                <View style={styles.consumedFooter}>
+                  <View style={[styles.statusPill, { backgroundColor: getStatusColor(calorieStatus) }]}>
+                    <Text style={styles.statusPillText}>{calorieStatus}</Text>
+                  </View>
+                  <Text style={styles.remainingText}>
+                    {dailyCalorieTarget - todayConsumedCalories >= 0 ? 'เหลือ ' : 'เกิน '}
+                    {Math.abs(dailyCalorieTarget - todayConsumedCalories)} kcal
                   </Text>
                 </View>
-              )}
+              </View>
 
               <View style={styles.section}>
                 <View style={styles.sectionHeader}>
@@ -415,23 +450,41 @@ const styles = StyleSheet.create({
   header: { padding: 20, paddingTop: 10 },
   headerTitle: { fontSize: 28, fontWeight: 'bold', color: 'white', marginBottom: 5 },
   headerSubtitle: { fontSize: 14, color: '#B0B0B0' },
-  realtimeIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+
+  // ★ consumed bar (real-time)
+  consumedBar: {
     marginHorizontal: 20,
-    marginBottom: 15,
-    backgroundColor: 'rgba(78, 205, 196, 0.2)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    gap: 8,
+    marginBottom: 18,
+    backgroundColor: 'rgba(44, 44, 84, 0.85)',
+    borderRadius: 14,
+    padding: 16,
   },
-  realtimeText: {
-    color: '#4ECDC4',
-    fontSize: 12,
-    fontWeight: '600',
+  consumedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    marginBottom: 10,
   },
+  consumedLabel: { color: '#B0B0B0', fontSize: 14, fontWeight: '600' },
+  consumedValue: { color: '#fff', fontSize: 20, fontWeight: 'bold' },
+  consumedUnit: { color: '#B0B0B0', fontSize: 14, fontWeight: '400' },
+  progressBg: {
+    height: 10,
+    backgroundColor: '#2C2C54',
+    borderRadius: 5,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressFill: { height: '100%', borderRadius: 5 },
+  consumedFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  statusPill: { paddingHorizontal: 14, paddingVertical: 4, borderRadius: 12 },
+  statusPillText: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
+  remainingText: { color: '#B0B0B0', fontSize: 13 },
+
   noProfileContainer: {
     marginHorizontal: 20,
     marginTop: 40,
